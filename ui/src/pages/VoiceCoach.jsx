@@ -9,10 +9,10 @@ import gsap from 'gsap';
 
 // PRESET DEFAULT SLIDES
 const DEFAULT_SLIDES = [
-  { id: 1, title: "Slide 1: Hook & Introduction", desc: "Introduce the problem statement. Create empathy and state your overarching mission." },
-  { id: 2, title: "Slide 2: Core Value Prop & Mechanics", desc: "Show how your product works. Focus on simplicity and unique advantages." },
-  { id: 3, title: "Slide 3: Business Model & Market", desc: "Address pricing, distribution strategy, and overall financial sizing." },
-  { id: 4, title: "Slide 4: Closing & Call to Action", desc: "Summarize major takeaways and give a strong, memorable call to action." }
+  { id: 1, title: "Slide 1: Lời Mở Đầu & Dẫn Dắt", desc: "Giới thiệu vấn đề thực tế. Tạo sự đồng cảm và tuyên bố sứ mệnh cốt lõi của bạn." },
+  { id: 2, title: "Slide 2: Giá Trị Cốt Lõi & Giải Pháp", desc: "Trình bày cách thức sản phẩm/dịch vụ vận hành. Tập trung vào sự đơn giản và lợi thế độc nhất." },
+  { id: 3, title: "Slide 3: Mô Hình Kinh Doanh & Thị Trường", desc: "Giải quyết bài toán doanh thu, định giá, chiến lược phân phối và quy mô thị trường." },
+  { id: 4, title: "Slide 4: Đúc Kết & Kêu Gọi Hành Động", desc: "Tóm tắt các thông điệp chính và đưa ra lời kêu gọi hành động mạnh mẽ, đáng nhớ." }
 ];
 
 export default function VoiceCoach() {
@@ -51,6 +51,7 @@ export default function VoiceCoach() {
   const [assessment, setAssessment] = useState(null);
   const [activeTab, setActiveTab] = useState('delivery'); // delivery, slides, suggestions
   const [textInput, setTextInput] = useState('');
+  const [isSTTSupported, setIsSTTSupported] = useState(true);
 
   // Refs for Speech API & Timers
   const mediaRecorderRef = useRef(null);
@@ -58,6 +59,17 @@ export default function VoiceCoach() {
   const recognitionRef = useRef(null);
   const timerRef = useRef(null);
   const cardContainerRef = useRef(null);
+
+  // Track state in refs to prevent stale closure bugs in browser speech events
+  const isRecordingRef = useRef(false);
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
+
+  const activeSlideIdRef = useRef(activeSlide.id);
+  useEffect(() => {
+    activeSlideIdRef.current = activeSlide.id;
+  }, [activeSlide.id]);
 
   // Save slides helper
   const saveSlides = (newSlides) => {
@@ -67,46 +79,76 @@ export default function VoiceCoach() {
 
   // Setup Browser STT (Web Speech API)
   useEffect(() => {
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const rec = new SpeechRecognition();
-      rec.continuous = true;
-      rec.interimResults = true;
-      rec.lang = 'vi-VN'; // Vietnamese voice-coaching capability
+    const hasSTT = 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
+    setIsSTTSupported(hasSTT);
 
-      rec.onresult = (event) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
-        }
-        if (finalTranscript) {
-          setTranscript(prev => {
-            const updated = (prev + ' ' + finalTranscript).trim();
-            // Assign to active slide's transcript bucket
-            setSpeechIntervals(prevBuckets => ({
-              ...prevBuckets,
-              [activeSlide.id]: updated
-            }));
-            return updated;
-          });
-        }
-      };
-
-      rec.onerror = (e) => {
-        console.error('STT Error:', e);
-        if (e.error === 'not-allowed') {
-          setStatusMsg('Cần cấp quyền micro trong cài đặt trình duyệt để tiếp tục.');
-        }
-      };
-
-      recognitionRef.current = rec;
+    if (!hasSTT) {
+      setSttProvider('manual');
+      return;
     }
-  }, [activeSlide.id]);
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const rec = new SpeechRecognition();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'vi-VN'; // Vietnamese voice-coaching capability
+
+    rec.onresult = (event) => {
+      let interimTranscript = '';
+      let finalTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
+      if (finalTranscript) {
+        setTranscript(prev => {
+          const updated = (prev + ' ' + finalTranscript).trim();
+          // Assign to active slide's transcript bucket
+          setSpeechIntervals(prevBuckets => ({
+            ...prevBuckets,
+            [activeSlideIdRef.current]: updated
+          }));
+          return updated;
+        });
+      }
+    };
+
+    rec.onerror = (e) => {
+      console.error('STT Error:', e);
+      if (e.error === 'not-allowed') {
+        setStatusMsg('Lỗi: Trình duyệt bị từ chối quyền truy cập Micro. Hãy cấp quyền truy cập thiết bị thu âm trong cài đặt trình duyệt để tiếp tục.');
+      } else if (e.error === 'network') {
+        setStatusMsg('Lỗi kết nối mạng: Engine Speech Recognition không thể liên lạc với máy chủ Google Speech.');
+      } else if (e.error === 'no-speech') {
+        console.warn('Không nghe thấy giọng nói từ micro.');
+      } else {
+        setStatusMsg(`Lỗi nhận diện giọng nói: ${e.error}`);
+      }
+    };
+
+    rec.onend = () => {
+      // Auto-restart if we are still supposed to be recording
+      if (isRecordingRef.current) {
+        try {
+          rec.start();
+          console.log('SpeechRecognition auto-restarted.');
+        } catch (err) {
+          console.error('SpeechRecognition auto-restart failed:', err);
+        }
+      }
+    };
+
+    recognitionRef.current = rec;
+
+    return () => {
+      try {
+        rec.stop();
+      } catch (err) {}
+    };
+  }, []);
 
   // Sync edit fields when active slide changes
   useEffect(() => {
@@ -169,52 +211,74 @@ export default function VoiceCoach() {
     setAssessment(null);
     audioChunksRef.current = [];
     
+    // Explicitly request microphone access first using standard getUserMedia to force browser permission prompt
+    let stream;
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+    } catch (err) {
+      console.error('Microphone access denied:', err);
+      setStatusMsg('Không thể truy cập Microphone. Hãy cấp quyền truy cập thiết bị thu âm trong cài đặt trình duyệt để tiếp tục.');
+      return;
+    }
+
     if (sttProvider === 'browser' && recognitionRef.current) {
       try {
+        // Stop the raw getUserMedia stream tracks to prevent duplicate microphone usage indicators
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+        }
         recognitionRef.current.start();
         setIsRecording(true);
         setRecordingTime(0);
-        setStatusMsg(`Đang ghi nhận bài thuyết trình cho Slide ${activeSlideIndex + 1}...`);
+        setStatusMsg(`Đang lắng nghe trực tiếp cho Slide ${activeSlideIndex + 1}... Hãy nói thuyết trình.`);
       } catch (err) {
-        console.error(err);
-        setStatusMsg('Lỗi khởi động Web Speech API.');
+        console.error('Web Speech API Start Error:', err);
+        setStatusMsg('Lỗi khởi động hệ thống nhận diện giọng nói Web Speech.');
       }
     } else {
       // Sandbox Simulator fallback
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      if (!stream) {
         setStatusMsg('Trình duyệt không hỗ trợ micro.');
         return;
       }
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorderRef.current = new MediaRecorder(stream);
         mediaRecorderRef.current.ondataavailable = (e) => {
           if (e.data.size > 0) audioChunksRef.current.push(e.data);
         };
         mediaRecorderRef.current.onstop = () => {
-          setStatusMsg('Đã lưu dữ liệu thuyết trình Sandbox.');
+          setStatusMsg('Đã lưu dữ liệu thuyết trình Sandbox. Hãy nhập văn bản phía dưới.');
         };
         mediaRecorderRef.current.start();
         setIsRecording(true);
         setRecordingTime(0);
-        setStatusMsg('Đang ghi âm (Mô phỏng Sandbox)... Hãy nói thuyết trình.');
+        setStatusMsg('Đang ghi âm (Mô phỏng Sandbox)... Hãy nói thuyết trình, sau đó nhập văn bản.');
       } catch (err) {
-        setStatusMsg('Không thể truy cập Microphone.');
+        console.error('MediaRecorder start error:', err);
+        setStatusMsg('Lỗi bắt đầu ghi âm cơ học.');
       }
     }
   };
 
   // Stop Recording
   const stopRecording = () => {
-    if (isRecording) {
+    if (isRecordingRef.current) {
+      setIsRecording(false);
+      
       if (sttProvider === 'browser' && recognitionRef.current) {
-        recognitionRef.current.stop();
+        try {
+          recognitionRef.current.stop();
+        } catch (err) {}
       }
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
+        try {
+          mediaRecorderRef.current.stop();
+        } catch (err) {}
       }
-      setIsRecording(false);
-      setStatusMsg('Đã ghi nhận bài nói. Hãy nhấn "Chấm bài nói" để AI phân tích nhịp điệu.');
+      
+      setStatusMsg('Đã ghi nhận bài thuyết trình. Nhấn "Chấm bài thuyết trình" để phân tích.');
     }
   };
 
@@ -487,7 +551,7 @@ export default function VoiceCoach() {
                     <span className="text-[9px] font-fira text-[#00F0FF] uppercase tracking-widest bg-[#00F0FF]/10 px-2 py-0.5 rounded border border-[#00F0FF]/25 font-bold">
                       Slide {activeSlideIndex + 1} / {slides.length}
                     </span>
-                    <span className="text-[9px] font-fira text-white/50">VAPOR PITCH</span>
+                    <span className="text-[9px] font-fira text-white/50">THUYẾT TRÌNH VAPOR</span>
                   </div>
 
                   <div className="space-y-1.5 z-10">
@@ -528,10 +592,10 @@ export default function VoiceCoach() {
               {/* Dynamic Soundwave & Real-time pacing tracker */}
               <div className="bg-[#11111E] rounded-[2.2rem] border border-white/5 p-4 flex flex-col gap-3 shrink-0">
                 <div className="flex justify-between items-center select-none">
-                  <span className="text-[9px] font-fira text-[#7B61FF] uppercase tracking-wider font-bold">Vapor Soundwave</span>
+                  <span className="text-[9px] font-fira text-[#7B61FF] uppercase tracking-wider font-bold">Sóng Âm Vapor</span>
                   {isRecording && (
                     <span className="text-[8px] font-fira text-red-400 bg-red-950/40 border border-red-900/60 px-2 py-0.5 rounded flex items-center gap-1 animate-pulse font-bold">
-                      <Activity size={10} /> RECORDING
+                      <Activity size={10} /> ĐANG GHI ÂM
                     </span>
                   )}
                 </div>
@@ -559,6 +623,12 @@ export default function VoiceCoach() {
               <div className="bg-[#11111E] rounded-[2.2rem] border border-white/5 p-5 flex-1 flex flex-col gap-3 min-h-[140px] relative overflow-hidden">
                 <div className="text-[9px] font-fira text-[#00F0FF] uppercase tracking-wider font-bold shrink-0">Live Dictation (Vietnamese)</div>
                 
+                {!isSTTSupported && (
+                  <div className="text-[10px] bg-red-950/30 border border-red-900/40 text-red-300 p-2.5 rounded-xl leading-normal shrink-0">
+                    ⚠️ Trình duyệt hiện tại không hỗ trợ nhận diện giọng nói trực tiếp (Web Speech API). Hãy mở ứng dụng bằng <strong>Google Chrome / Safari</strong> hoặc nhập văn bản thủ công bên dưới.
+                  </div>
+                )}
+
                 <div className="flex-1 overflow-y-auto text-xs text-white/90 leading-relaxed pr-1 select-text">
                   {transcript ? (
                     <p className="font-semibold text-[#F0EFF4]">{transcript}</p>
@@ -569,7 +639,7 @@ export default function VoiceCoach() {
                   )}
                 </div>
 
-                {sttProvider !== 'browser' && (
+                {(sttProvider !== 'browser' || !isSTTSupported) && (
                   <textarea
                     value={textInput}
                     onChange={(e) => setTextInput(e.target.value)}
@@ -602,7 +672,7 @@ export default function VoiceCoach() {
                 </div>
                 
                 <p className="text-[9px] font-fira text-[#88889C] mt-2 tracking-widest font-bold">
-                  {isRecording ? 'TAP TO STOP RECORDING' : 'TAP TO RECORD VOICE'}
+                  {isRecording ? 'NHẤN ĐỂ DỪNG THUYẾT TRÌNH' : 'NHẤN ĐỂ GHI ÂM BÀI NÓI'}
                 </p>
               </div>
 
@@ -646,12 +716,12 @@ export default function VoiceCoach() {
                   {/* Cyberpunk overall score widget */}
                   <div className="bg-gradient-to-tr from-[#11111E] to-[#18182A] border border-white/5 p-4 rounded-[2.2rem] flex justify-between items-center shrink-0 shadow-lg">
                     <div>
-                      <h3 className="text-[9px] font-fira text-[#7B61FF] uppercase tracking-widest font-bold">Zen Score Report</h3>
+                      <h3 className="text-[9px] font-fira text-[#7B61FF] uppercase tracking-widest font-bold">Báo Cáo Điểm Zen</h3>
                       <p className="text-base font-black text-white font-sora">{assessment.estimated_impact}</p>
                     </div>
                     
                     <div className="text-center bg-[#0A0A14] px-4 py-2 rounded-2xl border border-white/5 shadow-inner">
-                      <p className="text-[8px] text-[#88889C] font-fira uppercase font-bold">IMPACT</p>
+                      <p className="text-[8px] text-[#88889C] font-fira uppercase font-bold">ẢNH HƯỞNG</p>
                       <p className="text-base font-black text-[#00F0FF] font-fira">
                         {assessment.overall_score}<span className="text-[9px] text-white/40 font-normal">/100</span>
                       </p>
