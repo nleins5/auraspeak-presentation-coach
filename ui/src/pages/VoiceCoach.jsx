@@ -211,39 +211,25 @@ export default function VoiceCoach() {
     setAssessment(null);
     audioChunksRef.current = [];
     
-    // Explicitly request microphone access first using standard getUserMedia to force browser permission prompt
-    let stream;
-    try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      }
-    } catch (err) {
-      console.error('Microphone access denied:', err);
-      setStatusMsg('Không thể truy cập Microphone. Hãy cấp quyền truy cập thiết bị thu âm trong cài đặt trình duyệt để tiếp tục.');
-      return;
-    }
-
     if (sttProvider === 'browser' && recognitionRef.current) {
       try {
-        // Stop the raw getUserMedia stream tracks to prevent duplicate microphone usage indicators
-        if (stream) {
-          stream.getTracks().forEach(track => track.stop());
-        }
+        // CALL SYNCHRONOUSLY FIRST to guarantee Safari/iOS user interaction gesture is preserved
         recognitionRef.current.start();
         setIsRecording(true);
         setRecordingTime(0);
         setStatusMsg(`Đang lắng nghe trực tiếp cho Slide ${activeSlideIndex + 1}... Hãy nói thuyết trình.`);
       } catch (err) {
         console.error('Web Speech API Start Error:', err);
-        setStatusMsg('Lỗi khởi động hệ thống nhận diện giọng nói Web Speech.');
+        setStatusMsg('Lỗi kích hoạt micro nhận diện giọng nói Web Speech. Hãy cấp quyền Micro trong trình duyệt.');
       }
     } else {
-      // Sandbox Simulator fallback
-      if (!stream) {
+      // Sandbox Simulator fallback (uses standard MediaRecorder asynchronously)
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         setStatusMsg('Trình duyệt không hỗ trợ micro.');
         return;
       }
       try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorderRef.current = new MediaRecorder(stream);
         mediaRecorderRef.current.ondataavailable = (e) => {
           if (e.data.size > 0) audioChunksRef.current.push(e.data);
@@ -257,7 +243,7 @@ export default function VoiceCoach() {
         setStatusMsg('Đang ghi âm (Mô phỏng Sandbox)... Hãy nói thuyết trình, sau đó nhập văn bản.');
       } catch (err) {
         console.error('MediaRecorder start error:', err);
-        setStatusMsg('Lỗi bắt đầu ghi âm cơ học.');
+        setStatusMsg('Lỗi bắt đầu ghi âm cơ học. Hãy cấp quyền truy cập Micro.');
       }
     }
   };
