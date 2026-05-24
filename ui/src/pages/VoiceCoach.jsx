@@ -16,10 +16,12 @@ const DEFAULT_SLIDES = [
 ];
 
 export default function VoiceCoach() {
-  // App Config & Settings
-  const [engine, setEngine] = useState(() => localStorage.getItem('pres_coach_engine') || 'sandbox');
-  const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem('pres_coach_gemini_key') || '');
-  const [sttProvider, setSttProvider] = useState(() => localStorage.getItem('pres_coach_stt') || 'browser');
+  const [geminiKey, setGeminiKey] = useState(() => {
+    const saved = localStorage.getItem('pres_coach_gemini_key');
+    if (saved && saved.trim() !== '') return saved;
+    return import.meta.env.VITE_GEMINI_API_KEY || '';
+  });
+  const [sttProvider, setSttProvider] = useState(() => localStorage.getItem('pres_coach_stt') || 'cloud');
   const [activeView, setActiveView] = useState('practice'); // practice, report, settings
   const [showSlideDrawer, setShowSlideDrawer] = useState(false);
 
@@ -83,7 +85,7 @@ export default function VoiceCoach() {
     setIsSTTSupported(hasSTT);
 
     if (!hasSTT) {
-      setSttProvider('manual');
+      setSttProvider(prev => prev === 'browser' ? 'cloud' : prev);
       return;
     }
 
@@ -198,7 +200,6 @@ export default function VoiceCoach() {
 
   // Save general engine settings
   const handleSaveSettings = () => {
-    localStorage.setItem('pres_coach_engine', engine);
     localStorage.setItem('pres_coach_gemini_key', geminiKey);
     localStorage.setItem('pres_coach_stt', sttProvider);
     setStatusMsg('Cấu hình thuyết trình đã lưu thành công.');
@@ -207,6 +208,7 @@ export default function VoiceCoach() {
 
   // Start Voice Capturing
   const startRecording = async () => {
+    isRecordingRef.current = true;
     setTranscript('');
     setAssessment(null);
     audioChunksRef.current = [];
@@ -223,7 +225,7 @@ export default function VoiceCoach() {
         setStatusMsg('Lỗi kích hoạt micro nhận diện giọng nói Web Speech. Hãy cấp quyền Micro trong trình duyệt.');
       }
     } else {
-      // Sandbox Simulator fallback (uses standard MediaRecorder asynchronously)
+      // Cloud Whisper or Sandbox Simulator (uses standard MediaRecorder asynchronously)
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         setStatusMsg('Trình duyệt không hỗ trợ micro.');
         return;
@@ -234,13 +236,59 @@ export default function VoiceCoach() {
         mediaRecorderRef.current.ondataavailable = (e) => {
           if (e.data.size > 0) audioChunksRef.current.push(e.data);
         };
-        mediaRecorderRef.current.onstop = () => {
-          setStatusMsg('Đã lưu dữ liệu thuyết trình Sandbox. Hãy nhập văn bản phía dưới.');
+        mediaRecorderRef.current.onstop = async () => {
+          if (sttProvider === 'cloud') {
+            setStatusMsg('Đang tải lên dữ liệu ghi âm và nhận dạng tiếng Việt (Whisper)...');
+            try {
+              const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+              const formData = new FormData();
+              formData.append('file', audioBlob, 'speech.webm');
+              formData.append('language', 'vi');
+              formData.append('client_duration', recordingTime.toString());
+              
+              const apiBase = import.meta.env.VITE_API_BASE || '';
+              const response = await fetch(`${apiBase}/v1/audio/transcriptions`, {
+                method: 'POST',
+                body: formData
+              });
+              
+              if (!response.ok) {
+                throw new Error(`Lỗi nhận dạng: HTTP ${response.status}`);
+              }
+              
+              const data = await response.json();
+              if (data.error) {
+                setStatusMsg(`Nhận dạng thất bại: ${data.error}`);
+                return;
+              }
+              
+              if (data.text) {
+                const transcriptText = data.text.trim();
+                setTranscript(transcriptText);
+                setSpeechIntervals(prevBuckets => ({
+                  ...prevBuckets,
+                  [activeSlideIdRef.current]: transcriptText
+                }));
+                setStatusMsg('Nhận dạng giọng nói đám mây thành công!');
+              } else {
+                setStatusMsg('Không nhận diện được giọng nói. Vui lòng nói to rõ hơn.');
+              }
+            } catch (err) {
+              console.error('Cloud STT Error:', err);
+              setStatusMsg(`Lỗi Cloud STT: ${err.message || err}`);
+            }
+          } else {
+            setStatusMsg('Đã lưu dữ liệu thuyết trình Sandbox. Hãy nhập văn bản phía dưới.');
+          }
         };
         mediaRecorderRef.current.start();
         setIsRecording(true);
         setRecordingTime(0);
-        setStatusMsg('Đang ghi âm (Mô phỏng Sandbox)... Hãy nói thuyết trình, sau đó nhập văn bản.');
+        if (sttProvider === 'cloud') {
+          setStatusMsg(`Đang ghi âm qua đám mây cho Slide ${activeSlideIndex + 1}... Hãy nói thuyết trình.`);
+        } else {
+          setStatusMsg('Đang ghi âm (Mô phỏng Sandbox)... Hãy nói thuyết trình, sau đó nhập văn bản.');
+        }
       } catch (err) {
         console.error('MediaRecorder start error:', err);
         setStatusMsg('Lỗi bắt đầu ghi âm cơ học. Hãy cấp quyền truy cập Micro.');
@@ -250,20 +298,24 @@ export default function VoiceCoach() {
 
   // Stop Recording
   const stopRecording = () => {
-    if (isRecordingRef.current) {
-      setIsRecording(false);
-      
-      if (sttProvider === 'browser' && recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (err) {}
-      }
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        try {
-          mediaRecorderRef.current.stop();
-        } catch (err) {}
-      }
-      
+    isRecordingRef.current = false;
+    setIsRecording(false);
+    
+    if (sttProvider === 'browser' && recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (err) {}
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      } catch (err) {}
+    }
+    
+    if (sttProvider === 'cloud') {
+      setStatusMsg('Đang dừng ghi âm và chuẩn bị tải lên...');
+    } else {
       setStatusMsg('Đã ghi nhận bài thuyết trình. Nhấn "Chấm bài thuyết trình" để phân tích.');
     }
   };
@@ -332,26 +384,26 @@ export default function VoiceCoach() {
     const systemPrompt = `
       You are a world-class TED Talk Presentation Coach and Venture Pitch Consultant.
       Analyze the user's speech intervals and transcripts for each slide.
-      The language is Vietnamese. Provide extremely sharp, professional, and helpful feedback in elegant Vietnamese.
+      You MUST evaluate and respond ENTIRELY IN VIETNAMESE. All text fields in the JSON response MUST be written in highly professional, persuasive, elegant, and grammatically flawless Vietnamese. Under no circumstances should you output English or any other language except when quoting the user's exact words.
       
       Structure your analysis response to be STRICTLY raw JSON without markdown markers, matching this structure:
       {
         "overall_score": 88,
-        "estimated_impact": "Xuất Sắc",
-        "brutally_honest_summary": "Tóm tắt cực kỳ trực diện và tinh tế bằng tiếng Việt...",
+        "estimated_impact": "Xuất Sắc / Tốt / Khá / Cần Cải Thiện",
+        "brutally_honest_summary": "Tóm tắt cực kỳ trực diện, thẳng thắn và tinh tế bằng tiếng Việt...",
         "delivery_metrics": {
           "structure": "Phân tích cấu trúc slide-by-slide bằng tiếng Việt...",
-          "persuasion": "Đánh giá tính thuyết phục & sức mạnh lập luận...",
-          "clarity": "Phân tích tốc độ nói, phát âm và giọng điệu..."
+          "persuasion": "Đánh giá chi tiết tính thuyết phục & sức mạnh lập luận bằng tiếng Việt...",
+          "clarity": "Phân tích tốc độ nói, phát âm và giọng điệu bằng tiếng Việt..."
         },
         "slide_by_slide_feedback": [
-          "Nhận xét chi tiết cho Slide 1...",
-          "Nhận xét chi tiết cho Slide 2...",
-          "Nhận xét chi tiết cho Slide 3...",
-          "Nhận xét chi tiết cho Slide 4..."
+          "Nhận xét chi tiết cho Slide 1 bằng tiếng Việt...",
+          "Nhận xét chi tiết cho Slide 2 bằng tiếng Việt...",
+          "Nhận xét chi tiết cho Slide 3 bằng tiếng Việt...",
+          "Nhận xét chi tiết cho Slide 4 bằng tiếng Việt..."
         ],
-        "pro_presentation_tip": "Lời khuyên đắt giá độc quyền để nâng tầm kỹ năng...",
-        "better_version": "Đoạn văn viết lại hoàn chỉnh cho slide mở đầu hoặc slide then chốt giúp cuốn hút người nghe..."
+        "pro_presentation_tip": "Lời khuyên đắt giá độc quyền để nâng tầm kỹ năng bằng tiếng Việt...",
+        "better_version": "Đoạn văn viết lại hoàn chỉnh bằng tiếng Việt cho slide mở đầu hoặc slide then chốt giúp cuốn hút người nghe..."
       }
     `;
 
@@ -380,8 +432,7 @@ export default function VoiceCoach() {
       setActiveView('report');
     } catch (err) {
       console.error(err);
-      setStatusMsg(`Lỗi kết nối Gemini: ${err.message}. Tự động hạ cấp xuống Sandbox.`);
-      generateSandboxReport(textToAnalyze);
+      setStatusMsg(`Lỗi kết nối Gemini: ${err.message || err}. Vui lòng kiểm tra lại cấu hình API Key hoặc kết nối.`);
     } finally {
       setIsLoading(false);
     }
@@ -395,11 +446,13 @@ export default function VoiceCoach() {
       return;
     }
 
-    if (engine === 'gemini' && geminiKey) {
-      analyzeWithGemini(combinedTranscript);
-    } else {
-      generateSandboxReport(combinedTranscript);
+    if (!geminiKey) {
+      setStatusMsg('Bạn cần điền Google Gemini API Key để chấm điểm. Đang chuyển hướng sang trang Cài đặt...');
+      setActiveView('settings');
+      return;
     }
+
+    analyzeWithGemini(combinedTranscript);
   };
 
   // Slide Deck navigation helpers
@@ -513,7 +566,7 @@ export default function VoiceCoach() {
           </div>
 
           <div className="px-2 py-0.5 rounded border border-[#7B61FF]/30 bg-[#7B61FF]/10 text-[8px] text-[#00F0FF] font-fira font-bold shadow-[0_0_8px_rgba(0,240,255,0.15)]">
-            {engine === 'sandbox' ? 'SANDBOX' : 'GEMINI PRO'}
+            GEMINI AI
           </div>
         </header>
 
@@ -835,33 +888,19 @@ export default function VoiceCoach() {
                 </div>
 
                 <div className="space-y-4">
-                  <div>
-                    <label className="block text-[9px] font-fira text-[#7B61FF] uppercase tracking-wider mb-2 font-bold">Engine Đánh giá</label>
-                    <select
-                      value={engine}
-                      onChange={(e) => setEngine(e.target.value)}
+                  <div className="space-y-1 animate-in fade-in duration-200">
+                    <label className="block text-[9px] font-fira text-[#7B61FF] uppercase tracking-wider mb-1 font-bold">Google Gemini API Key</label>
+                    <input
+                      type="password"
+                      value={geminiKey}
+                      onChange={(e) => setGeminiKey(e.target.value)}
+                      placeholder="Nhập API Key: AIzaSy..."
                       className="w-full bg-[#0A0A14] border border-white/5 rounded-xl p-3 text-xs focus:outline-none focus:border-[#7B61FF] text-white"
-                    >
-                      <option value="sandbox">Sandbox Simulator (Miễn phí hoàn toàn)</option>
-                      <option value="gemini">Google Gemini AI (Direct API Client)</option>
-                    </select>
+                    />
+                    <p className="text-[8px] text-[#88889C] leading-normal pt-1">
+                      🔒 API Key được lưu trực tiếp trong LocalStorage trên máy khách, tuyệt đối an toàn.
+                    </p>
                   </div>
-
-                  {engine === 'gemini' && (
-                    <div className="space-y-1 animate-in fade-in duration-200">
-                      <label className="block text-[9px] font-fira text-[#7B61FF] uppercase tracking-wider mb-1 font-bold">Google Gemini API Key</label>
-                      <input
-                        type="password"
-                        value={geminiKey}
-                        onChange={(e) => setGeminiKey(e.target.value)}
-                        placeholder="Nhập API Key: AIzaSy..."
-                        className="w-full bg-[#0A0A14] border border-white/5 rounded-xl p-3 text-xs focus:outline-none focus:border-[#7B61FF] text-white"
-                      />
-                      <p className="text-[8px] text-[#88889C] leading-normal pt-1">
-                        🔒 API Key được lưu trực tiếp trong LocalStorage trên máy khách, tuyệt đối an toàn.
-                      </p>
-                    </div>
-                  )}
 
                   <div>
                     <label className="block text-[9px] font-fira text-[#7B61FF] uppercase tracking-wider mb-2 font-bold">Nhận diện giọng nói (STT)</label>
@@ -870,6 +909,7 @@ export default function VoiceCoach() {
                       onChange={(e) => setSttProvider(e.target.value)}
                       className="w-full bg-[#0A0A14] border border-white/5 rounded-xl p-3 text-xs focus:outline-none focus:border-[#7B61FF] text-white"
                     >
+                      <option value="cloud">Cloud Whisper API (Đám mây siêu chính xác)</option>
                       <option value="browser">Browser Web Speech API (Ghi âm trực tiếp)</option>
                       <option value="manual">Nhập văn bản thủ công (Sandbox Textbox)</option>
                     </select>
