@@ -320,104 +320,32 @@ export default function VoiceCoach() {
     }
   };
 
-  // Local Sandbox Generator (Offline scoring)
-  const generateSandboxReport = (text) => {
-    setIsLoading(true);
-    setStatusMsg('AI đang chạy giải thuật phân tích nhịp điệu thuyết trình...');
-
-    setTimeout(() => {
-      const words = text.split(/\s+/).filter(Boolean).length;
-      const fillerWords = (text.match(/\b(thì|là|mà|như là|kiểu như|kiểu|với lại|à|ừm)\b/ig) || []).length;
-      const pacingWpm = recordingTime > 0 ? Math.round((words / recordingTime) * 60) : 125;
-
-      let score = 78;
-      if (words > 35) score += 6;
-      if (words > 70) score += 6;
-      if (fillerWords < 3) score += 5;
-      if (pacingWpm >= 110 && pacingWpm <= 140) score += 5;
-      score = Math.min(95, Math.max(50, score));
-
-      let impact = "Đạt Tiêu Chuẩn";
-      if (score >= 87) impact = "Cực Kỳ Thuyết Phục";
-      else if (score >= 76) impact = "Rất Thuyết Phục";
-
-      setAssessment({
-        overall_score: score,
-        estimated_impact: impact,
-        brutally_honest_summary: `Bài nói có độ hoàn thiện tốt. Bạn đã trình bày ${words} từ trong ${recordingTime}s. Nhịp điệu trung bình là ${pacingWpm} WPM - lý tưởng cho các buổi thuyết trình và gọi vốn.`,
-        delivery_metrics: {
-          structure: "Mở bài thu hút được người nghe. Điểm nghẽn nằm ở cách chuyển slide, bạn cần kết hợp từ nối mềm mại hơn giữa slide 2 và slide 3.",
-          persuasion: "Bạn trình bày tự tin nhưng thiếu số liệu thực tế chứng minh. Thêm tối thiểu một con số phần trăm để tăng sức nặng lập luận.",
-          clarity: "Phát âm rõ ràng, không bị dính chữ. Tốc độ nói kiểm soát tốt giúp người nghe không bị ngộp thông tin."
-        },
-        slide_by_slide_feedback: slides.map((s, i) => {
-          const slideText = speechIntervals[s.id] || "";
-          const slideWords = slideText.split(/\s+/).filter(Boolean).length;
-          return `Slide ${s.id} (${slideWords} từ): ${
-            slideWords > 0 
-              ? `Tập trung tốt vào cốt lõi slide. Tuy nhiên, tránh lặp lại nguyên văn tiêu đề.` 
-              : `Chưa ghi nhận bài nói cho slide này. Hãy bổ sung tối thiểu 20 từ để AI phân tích.`
-          }`;
-        }),
-        pro_presentation_tip: "Mẹo Zen Coach: Ở các slide có ý nghĩa quyết định (như Slide 3 về Mô hình kinh doanh), hãy dừng khoảng 1.5 giây trước khi công bố thông số chính. Sự im lặng tạo nên tính quyền lực.",
-        better_version: "Gợi ý đoạn mở bài đỉnh cao:\n\"Chúng ta đang sống trong một kỷ nguyên mà thông tin quá tải nhưng sự thấu hiểu lại cực kỳ xa xỉ. Hôm nay, tôi mang tới một giao thức hoàn toàn mới giúp đơn giản hóa mọi bài thuyết trình...\""
-      });
-
-      setIsLoading(false);
-      setStatusMsg('Báo cáo phân tích thuyết trình đã hoàn tất.');
-      setActiveView('report');
-    }, 1200);
-  };
-
-  // Google Gemini Client-side direct generation
+  // Call AI Coaching API via Unified Router AI Endpoint for Presentation
   const analyzeWithGemini = async (textToAnalyze) => {
-    if (!geminiKey) {
-      setStatusMsg('Hãy cấu hình Gemini API Key trong tab Cấu hình.');
-      return;
-    }
-
     setIsLoading(true);
-    setStatusMsg('Đang gửi dữ liệu phân tích tới Google Gemini AI...');
+    setStatusMsg('Đang gửi dữ liệu phân tích tới AI Coach...');
 
     const slideStats = slides.map(s => `Slide ${s.id} [${s.title}]: "${speechIntervals[s.id] || ''}"`).join('\n');
 
-    const systemPrompt = `
-      You are a world-class TED Talk Presentation Coach and Venture Pitch Consultant.
-      Analyze the user's speech intervals and transcripts for each slide.
-      You MUST evaluate and respond ENTIRELY IN VIETNAMESE. All text fields in the JSON response MUST be written in highly professional, persuasive, elegant, and grammatically flawless Vietnamese. Under no circumstances should you output English or any other language except when quoting the user's exact words.
-      
-      Structure your analysis response to be STRICTLY raw JSON without markdown markers, matching this structure:
-      {
-        "overall_score": 88,
-        "estimated_impact": "Xuất Sắc / Tốt / Khá / Cần Cải Thiện",
-        "brutally_honest_summary": "Tóm tắt cực kỳ trực diện, thẳng thắn và tinh tế bằng tiếng Việt...",
-        "delivery_metrics": {
-          "structure": "Phân tích cấu trúc slide-by-slide bằng tiếng Việt...",
-          "persuasion": "Đánh giá chi tiết tính thuyết phục & sức mạnh lập luận bằng tiếng Việt...",
-          "clarity": "Phân tích tốc độ nói, phát âm và giọng điệu bằng tiếng Việt..."
-        },
-        "slide_by_slide_feedback": [
-          "Nhận xét chi tiết cho Slide 1 bằng tiếng Việt...",
-          "Nhận xét chi tiết cho Slide 2 bằng tiếng Việt...",
-          "Nhận xét chi tiết cho Slide 3 bằng tiếng Việt...",
-          "Nhận xét chi tiết cho Slide 4 bằng tiếng Việt..."
-        ],
-        "pro_presentation_tip": "Lời khuyên đắt giá độc quyền để nâng tầm kỹ năng bằng tiếng Việt...",
-        "better_version": "Đoạn văn viết lại hoàn chỉnh bằng tiếng Việt cho slide mở đầu hoặc slide then chốt giúp cuốn hút người nghe..."
-      }
-    `;
-
     try {
+      const baseUrl = import.meta.env.VITE_ROUTER_AI_URL || 'http://localhost:8000';
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (geminiKey.trim()) {
+        headers['Authorization'] = `Bearer ${geminiKey}`;
+      }
+
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+        `${baseUrl}/v1/chat/presentation`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: headers,
           body: JSON.stringify({
-            contents: [{
-              parts: [{ text: `${systemPrompt}\n\nUser overall presentation transcript: "${textToAnalyze}"\n\nIndividual slide transcripts:\n${slideStats}` }]
-            }],
-            generationConfig: { responseMimeType: "application/json" }
+            query: `Văn bản bài thuyết trình của người dùng: "${textToAnalyze}"\n\nNội dung chi tiết từng slide:\n${slideStats}`,
+            task: 'presentation',
+            model_override: 'gemini'
           })
         }
       );
@@ -425,14 +353,14 @@ export default function VoiceCoach() {
       if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
 
       const data = await response.json();
-      const rawText = data.candidates[0].content.parts[0].text;
+      const rawText = data.answer;
       const parsed = JSON.parse(rawText.trim());
       setAssessment(parsed);
-      setStatusMsg('Đã kết xuất báo cáo phân tích từ Gemini.');
+      setStatusMsg('Đã kết xuất báo cáo phân tích từ AI Coach.');
       setActiveView('report');
     } catch (err) {
       console.error(err);
-      setStatusMsg(`Lỗi kết nối Gemini: ${err.message || err}. Vui lòng kiểm tra lại cấu hình API Key hoặc kết nối.`);
+      setStatusMsg(`Phân tích thất bại: ${err.message || err}.`);
     } finally {
       setIsLoading(false);
     }
@@ -446,13 +374,13 @@ export default function VoiceCoach() {
       return;
     }
 
-    if (!geminiKey) {
-      setStatusMsg('Bạn cần điền Google Gemini API Key để chấm điểm. Đang chuyển hướng sang trang Cài đặt...');
+    const routerUrl = import.meta.env.VITE_ROUTER_AI_URL;
+    if (geminiKey.trim() || routerUrl) {
+      analyzeWithGemini(combinedTranscript);
+    } else {
+      setStatusMsg('Bạn cần điền Google Gemini API Key hoặc cấu hình Router URL để chấm điểm. Đang chuyển hướng sang trang Cài đặt...');
       setActiveView('settings');
-      return;
     }
-
-    analyzeWithGemini(combinedTranscript);
   };
 
   // Slide Deck navigation helpers
