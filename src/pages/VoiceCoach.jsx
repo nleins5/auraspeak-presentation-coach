@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   Presentation, Mic, Square, Settings, Layout, 
-  Sparkles, Clock, AlertCircle, CheckCircle2, 
+  Sparkles,
   ChevronRight, ChevronLeft, RefreshCw, Volume2, Activity, Play, Award, 
-  Sliders, Edit3, Trash2, Plus, Sparkle, Check, Pause, Loader2
+  Edit3, Trash2, Plus, Sparkle, Check, Pause, Loader2
 } from 'lucide-react';
 import gsap from 'gsap';
 
@@ -96,13 +96,10 @@ export default function VoiceCoach() {
     rec.lang = 'vi-VN'; // Vietnamese voice-coaching capability
 
     rec.onresult = (event) => {
-      let interimTranscript = '';
       let finalTranscript = '';
       for (let i = event.resultIndex; i < event.results.length; ++i) {
         if (event.results[i].isFinal) {
           finalTranscript += event.results[i][0].transcript;
-        } else {
-          interimTranscript += event.results[i][0].transcript;
         }
       }
       if (finalTranscript) {
@@ -148,7 +145,9 @@ export default function VoiceCoach() {
     return () => {
       try {
         rec.stop();
-      } catch (err) {}
+      } catch {
+        // Ignore cleanup errors when recognition was never started.
+      }
     };
   }, []);
 
@@ -159,7 +158,7 @@ export default function VoiceCoach() {
       setEditDesc(activeSlide.desc);
       setTranscript(speechIntervals[activeSlide.id] || '');
     }
-  }, [activeSlideIndex, slides, speechIntervals]);
+  }, [activeSlide, activeSlideIndex, slides, speechIntervals]);
 
   // Waveform glowing plasma visualizer simulator
   useEffect(() => {
@@ -304,13 +303,17 @@ export default function VoiceCoach() {
     if (sttProvider === 'browser' && recognitionRef.current) {
       try {
         recognitionRef.current.stop();
-      } catch (err) {}
+      } catch {
+        // Ignore stop errors when recognition is already inactive.
+      }
     }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try {
         mediaRecorderRef.current.stop();
         mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-      } catch (err) {}
+      } catch {
+        // Ignore stop errors when recorder tracks were already released.
+      }
     }
     
     if (sttProvider === 'cloud') {
