@@ -245,8 +245,7 @@ export default function VoiceCoach() {
               formData.append('language', 'vi');
               formData.append('client_duration', recordingTime.toString());
               
-              const apiBase = import.meta.env.VITE_API_BASE || '';
-              const response = await fetch(`${apiBase}/v1/audio/transcriptions`, {
+              const response = await fetch('/v1/audio/transcriptions', {
                 method: 'POST',
                 body: formData
               });
@@ -331,7 +330,6 @@ export default function VoiceCoach() {
     const slideStats = slides.map(s => `Slide ${s.id} [${s.title}]: "${speechIntervals[s.id] || ''}"`).join('\n');
 
     try {
-      const baseUrl = import.meta.env.VITE_ROUTER_AI_URL || 'http://localhost:8000';
       const headers = {
         'Content-Type': 'application/json',
       };
@@ -341,7 +339,7 @@ export default function VoiceCoach() {
       }
 
       const response = await fetch(
-        `${baseUrl}/v1/chat/presentation`,
+        '/v1/chat/presentation',
         {
           method: 'POST',
           headers: headers,
@@ -377,13 +375,7 @@ export default function VoiceCoach() {
       return;
     }
 
-    const routerUrl = import.meta.env.VITE_ROUTER_AI_URL;
-    if (geminiKey.trim() || routerUrl) {
-      analyzeWithGemini(combinedTranscript);
-    } else {
-      setStatusMsg('Bạn cần điền Google Gemini API Key hoặc cấu hình Router URL để chấm điểm. Đang chuyển hướng sang trang Cài đặt...');
-      setActiveView('settings');
-    }
+    analyzeWithGemini(combinedTranscript);
   };
 
   // Slide Deck navigation helpers
