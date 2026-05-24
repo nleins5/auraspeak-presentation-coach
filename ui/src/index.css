@@ -57,6 +57,18 @@
     font-family: 'Outfit', sans-serif;
   }
 
+  .font-sora {
+    font-family: 'Sora', sans-serif;
+  }
+
+  .font-instrument {
+    font-family: 'Instrument Serif', serif;
+  }
+
+  .font-fira {
+    font-family: 'Fira Code', monospace;
+  }
+
   .data-mono {
     font-family: 'JetBrains Mono', monospace;
   }
