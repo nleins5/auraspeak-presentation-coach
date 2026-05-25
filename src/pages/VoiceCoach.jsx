@@ -420,8 +420,7 @@ export default function VoiceCoach() {
           headers: headers,
           body: JSON.stringify({
             query: `Văn bản bài thuyết trình của người dùng: "${textToAnalyze}"\n\nNội dung chi tiết từng slide:\n${slideStats}`,
-            task: 'presentation',
-            model_override: 'gemini'
+            task: 'presentation'
           })
         }
       );
