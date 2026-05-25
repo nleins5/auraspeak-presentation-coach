@@ -650,7 +650,7 @@ export default function VoiceCoach() {
               <Presentation size={15} />
             </div>
             <div>
-              <h1 className="text-xs font-black tracking-tight text-white font-sora">AetherSpace</h1>
+              <h1 className="text-xs font-black tracking-tight text-white font-sora">VaporPitch</h1>
               <p className="text-[8px] text-[#7B61FF] font-fira tracking-widest uppercase font-bold">Pitch Coach</p>
             </div>
           </div>
@@ -671,7 +671,7 @@ export default function VoiceCoach() {
               <div className="relative shrink-0 select-none">
                 <div 
                   ref={cardContainerRef}
-                  className="slide-active-card bg-gradient-to-b from-[#18182A] to-[#11111E] text-[#F0EFF4] p-5 rounded-[2.2rem] shadow-[0_12px_24px_rgba(0,0,0,0.4)] border border-white/5 relative overflow-hidden flex flex-col justify-between aspect-[16/10]"
+                  className="slide-active-card bg-gradient-to-b from-[#18182A] to-[#11111E] text-[#F0EFF4] p-5 rounded-[2.2rem] shadow-[0_12px_24px_rgba(0,0,0,0.4)] border border-white/5 relative overflow-hidden flex flex-col justify-between min-h-[240px] md:min-h-[260px]"
                 >
                   {/* Glowing futuristic tech overlays */}
                   <div className="absolute right-0 top-0 w-32 h-32 rounded-full bg-[#7B61FF]/5 blur-2xl pointer-events-none"></div>
@@ -683,11 +683,13 @@ export default function VoiceCoach() {
                     <span className="text-[9px] font-fira text-white/50">THUYẾT TRÌNH VAPOR</span>
                   </div>
 
-                  <div className="space-y-1.5 z-10">
-                    <h3 className="text-xs font-black tracking-tight text-white font-sora line-clamp-1">{activeSlide.title}</h3>
-                    <p className="text-xs leading-relaxed font-instrument italic text-[#F0EFF4]/85 text-justify">
-                      "{activeSlide.desc}"
-                    </p>
+                  <div className="space-y-2 z-10 flex-1 flex flex-col min-h-0 py-1">
+                    <h3 className="text-xs font-black tracking-tight text-[#00F0FF] font-sora shrink-0">{activeSlide.title}</h3>
+                    <div className="flex-1 overflow-y-auto pr-1.5 custom-scrollbar text-left scroll-smooth min-h-[90px] max-h-[145px]">
+                      <p className="text-xs leading-relaxed font-instrument italic text-[#F0EFF4]/90 text-justify select-text">
+                        "{activeSlide.desc}"
+                      </p>
+                    </div>
                   </div>
 
                   <div className="flex justify-between items-center border-t border-white/5 pt-3.5 mt-3 z-10">
@@ -749,7 +751,7 @@ export default function VoiceCoach() {
               </div>
 
               {/* Live Transcript / Input Panel */}
-              <div className="bg-[#11111E] rounded-[2.2rem] border border-white/5 p-5 flex-1 flex flex-col gap-3 min-h-[140px] relative overflow-hidden">
+              <div className="bg-[#11111E] rounded-[2.2rem] border border-white/5 p-5 flex-1 flex flex-col gap-3 min-h-[260px] relative overflow-hidden">
                 <div className="text-[9px] font-fira text-[#00F0FF] uppercase tracking-wider font-bold shrink-0">Live Dictation (Vietnamese)</div>
                 
                 {!isSTTSupported && (
@@ -773,7 +775,7 @@ export default function VoiceCoach() {
                     value={textInput}
                     onChange={(e) => setTextInput(e.target.value)}
                     placeholder="Gõ đoạn văn bản thuyết trình slide tại đây để kiểm tra..."
-                    className="w-full h-16 bg-[#0A0A14] border border-white/5 rounded-2xl p-3 text-xs text-white focus:outline-none focus:border-[#7B61FF] resize-none shrink-0"
+                    className="w-full h-28 bg-[#0A0A14] border border-white/5 rounded-2xl p-3 text-xs text-white focus:outline-none focus:border-[#7B61FF] resize-y min-h-[96px] shrink-0"
                   />
                 )}
               </div>
@@ -1091,8 +1093,7 @@ export default function VoiceCoach() {
                   <textarea
                     value={editDesc}
                     onChange={(e) => setEditDesc(e.target.value)}
-                    rows={3}
-                    className="w-full bg-[#0A0A14] border border-white/5 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-[#7B61FF] resize-none"
+                    className="w-full h-32 min-h-[96px] bg-[#0A0A14] border border-white/5 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-[#7B61FF] resize-y"
                   />
                 </div>
 
