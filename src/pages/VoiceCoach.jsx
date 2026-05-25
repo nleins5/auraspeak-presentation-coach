@@ -397,6 +397,59 @@ export default function VoiceCoach() {
     }
   };
 
+  const parseAIJsonResponse = (rawText) => {
+    const text = String(rawText || '').trim();
+    try {
+      return JSON.parse(text);
+    } catch {
+      const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+      const candidate = jsonMatch?.[1] || text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1);
+      return JSON.parse(candidate);
+    }
+  };
+
+  const toList = (value) => {
+    if (!value) return [];
+    return Array.isArray(value) ? value.filter(Boolean) : [String(value)];
+  };
+
+  const categorySummary = (category) => {
+    if (!category) return 'AI chưa trả đủ dữ liệu cho mục này.';
+    return [
+      ...toList(category.feedback),
+      ...toList(category.strengths).map(item => `Điểm mạnh: ${item}`),
+      ...toList(category.weaknesses).map(item => `Cần cải thiện: ${item}`),
+    ].join(' ') || 'AI chưa trả đủ dữ liệu cho mục này.';
+  };
+
+  const normalizePresentationAssessment = (raw) => {
+    const categories = raw.categories && typeof raw.categories === 'object' ? raw.categories : {};
+    const rawScore = Number(raw.overall_score ?? raw.score ?? 0);
+    const displayScore = Number.isFinite(rawScore) && rawScore <= 10 ? Math.round(rawScore * 10) : (raw.overall_score ?? 'N/A');
+    const deliveryMetrics = raw.delivery_metrics && typeof raw.delivery_metrics === 'object'
+      ? raw.delivery_metrics
+      : Object.fromEntries(
+        Object.entries(categories).map(([key, item]) => [key.replace(/_/g, ' '), categorySummary(item)])
+      );
+    const categoryFeedback = Object.entries(categories).flatMap(([key, item]) => [
+      `${key.replace(/_/g, ' ')}: ${categorySummary(item)}`
+    ]);
+    const slideFeedback = toList(raw.slide_by_slide_feedback).length
+      ? toList(raw.slide_by_slide_feedback)
+      : [...toList(raw.top_5_improvements), ...categoryFeedback].slice(0, 6);
+
+    return {
+      ...raw,
+      overall_score: displayScore,
+      estimated_impact: raw.estimated_impact || (rawScore >= 8 ? 'High Impact' : rawScore >= 6 ? 'Good Potential' : 'Needs Sharpening'),
+      brutally_honest_summary: raw.brutally_honest_summary || raw.summary || 'AI đã chấm xong nhưng chưa trả nhận xét tổng quan.',
+      delivery_metrics: Object.keys(deliveryMetrics).length ? deliveryMetrics : { clarity: 'Cần nói rõ ý chính, nhịp nói và điểm nhấn.' },
+      slide_by_slide_feedback: slideFeedback.length ? slideFeedback : ['Cần thêm nội dung cụ thể cho từng slide để AI phân tích sâu hơn.'],
+      better_version: raw.better_version || raw.ideal_rewritten_answer || raw.natural_rewritten_answer || 'AI chưa trả bản nói mẫu cho bài thuyết trình này.',
+      pro_presentation_tip: raw.pro_presentation_tip || toList(raw.top_5_improvements)[0] || 'Mở đầu bằng vấn đề cụ thể, sau đó chốt mỗi slide bằng một thông điệp chính.',
+    };
+  };
+
   // Call AI Coaching API via Unified Router AI Endpoint for Presentation
   const analyzeWithGemini = async (textToAnalyze) => {
     setIsLoading(true);
@@ -429,7 +482,7 @@ export default function VoiceCoach() {
 
       const data = await response.json();
       const rawText = data.answer;
-      const parsed = JSON.parse(rawText.trim());
+      const parsed = normalizePresentationAssessment(parseAIJsonResponse(rawText));
       setAssessment(parsed);
       setStatusMsg('Đã kết xuất báo cáo phân tích từ AI Coach.');
       setActiveView('report');
