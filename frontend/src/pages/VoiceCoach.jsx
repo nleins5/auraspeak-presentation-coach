@@ -347,7 +347,7 @@ export default function VoiceCoach() {
         setStatusMsg('Trình duyệt không hỗ trợ micro.');
         return;
       }
-      const startTime = Date.now();
+      const startTime = new Date().getTime();
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         recordingStartedAtRef.current = startTime;
