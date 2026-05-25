@@ -3,7 +3,7 @@ import {
   Presentation, Mic, Square, Settings, Layout, 
   Sparkles,
   ChevronRight, ChevronLeft, RefreshCw, Volume2, Activity, Play, Award, 
-  Edit3, Trash2, Plus, Sparkle, Check, Pause, Loader2
+  Edit3, Trash2, Plus, Sparkle, Check, Pause, Loader2, Upload
 } from 'lucide-react';
 import gsap from 'gsap';
 
@@ -50,6 +50,7 @@ export default function VoiceCoach() {
 
   // Scoring / Assessment States
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [assessment, setAssessment] = useState(null);
   const [activeTab, setActiveTab] = useState('delivery'); // delivery, slides, suggestions
   const [textInput, setTextInput] = useState('');
@@ -60,6 +61,7 @@ export default function VoiceCoach() {
   const audioChunksRef = useRef([]);
   const recognitionRef = useRef(null);
   const timerRef = useRef(null);
+  const audioUploadRef = useRef(null);
   const cardContainerRef = useRef(null);
 
   // Track state in refs to prevent stale closure bugs in browser speech events
@@ -327,6 +329,57 @@ export default function VoiceCoach() {
       setStatusMsg('Đang dừng ghi âm và chuẩn bị tải lên...');
     } else {
       setStatusMsg('Đã ghi nhận bài thuyết trình. Nhấn "Chấm bài thuyết trình" để phân tích.');
+    }
+  };
+
+  const handleAudioUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setTranscript('');
+    setTextInput('');
+    setAssessment(null);
+    setIsUploadingAudio(true);
+    setStatusMsg(`Đang tải file voice "${file.name}" lên cho Slide ${activeSlideIndex + 1}...`);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file, file.name || 'uploaded-audio');
+      formData.append('language', 'vi');
+      formData.append('client_duration', '0');
+
+      const response = await fetch('/v1/audio/transcriptions', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error(`Lỗi nhận dạng: HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.error) {
+        setStatusMsg(`Upload voice thất bại: ${data.error}`);
+        return;
+      }
+
+      if (data.text) {
+        const transcriptText = data.text.trim();
+        setTranscript(transcriptText);
+        setSpeechIntervals(prevBuckets => ({
+          ...prevBuckets,
+          [activeSlideIdRef.current]: transcriptText
+        }));
+        setStatusMsg('Upload voice và nhận dạng thành công!');
+      } else {
+        setStatusMsg('Không nhận diện được nội dung trong file voice.');
+      }
+    } catch (err) {
+      console.error('Audio upload STT error:', err);
+      setStatusMsg(`Upload voice thất bại: ${err.message || err}`);
+    } finally {
+      setIsUploadingAudio(false);
     }
   };
 
@@ -657,7 +710,8 @@ export default function VoiceCoach() {
                   
                   <button
                     onClick={isRecording ? stopRecording : startRecording}
-                    className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg transition-all transform cursor-pointer z-10 border ${
+                    disabled={isUploadingAudio}
+                    className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg transition-all transform cursor-pointer z-10 border disabled:opacity-50 disabled:cursor-not-allowed ${
                       isRecording 
                         ? 'bg-gradient-to-tr from-red-500 to-amber-500 text-white border-red-400 hover:scale-95' 
                         : 'bg-gradient-to-tr from-[#7B61FF] to-[#00F0FF] hover:scale-105 border-white/10 text-white shadow-[0_0_20px_rgba(123,97,255,0.4)]'
@@ -670,6 +724,22 @@ export default function VoiceCoach() {
                 <p className="text-[9px] font-fira text-[#88889C] mt-2 tracking-widest font-bold">
                   {isRecording ? 'NHẤN ĐỂ DỪNG THUYẾT TRÌNH' : 'NHẤN ĐỂ GHI ÂM BÀI NÓI'}
                 </p>
+                <input
+                  ref={audioUploadRef}
+                  type="file"
+                  accept="audio/*,.m4a,.mp3,.wav,.webm,.ogg,.aac"
+                  onChange={handleAudioUpload}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => audioUploadRef.current?.click()}
+                  disabled={isRecording || isUploadingAudio}
+                  className="mt-2 h-8 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-[#F0EFF4] text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {isUploadingAudio ? <Loader2 className="animate-spin" size={12} /> : <Upload size={12} />}
+                  Upload voice
+                </button>
               </div>
 
               {/* Action operations pill buttons */}
@@ -682,7 +752,7 @@ export default function VoiceCoach() {
                 </button>
                 <button
                   onClick={handleAnalyze}
-                  disabled={isLoading || isRecording}
+                  disabled={isLoading || isRecording || isUploadingAudio}
                   className="flex-1 h-11 rounded-xl bg-[#7B61FF] hover:bg-[#684CFF] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 shadow-[0_4px_12px_rgba(123,97,255,0.3)] cursor-pointer"
                 >
                   {isLoading ? <RefreshCw className="animate-spin" size={14} /> : <Sparkles size={14} />}
