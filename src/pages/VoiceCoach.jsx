@@ -920,7 +920,7 @@ export default function VoiceCoach() {
                             text={assessment.brutally_honest_summary} 
                             voiceName="M1" 
                             speed={1.05} 
-                            lang="en" 
+                            lang="vi" 
                             accentColor="#7B61FF" 
                           />
                         </div>
@@ -965,7 +965,7 @@ export default function VoiceCoach() {
                             text={assessment.better_version} 
                             voiceName="M1" 
                             speed={1.05} 
-                            lang="en" 
+                            lang="vi" 
                             accentColor="#7B61FF" 
                           />
                         </div>
