@@ -326,7 +326,6 @@ export default function VoiceCoach() {
 
   // Start Voice Capturing
   const startRecording = async () => {
-    const startTime = Date.now();
     isRecordingRef.current = true;
     setTranscript('');
     setAssessment(null);
@@ -348,6 +347,7 @@ export default function VoiceCoach() {
         setStatusMsg('Trình duyệt không hỗ trợ micro.');
         return;
       }
+      const startTime = Date.now();
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         recordingStartedAtRef.current = startTime;
@@ -361,7 +361,7 @@ export default function VoiceCoach() {
             setStatusMsg('Trình duyệt không hỗ trợ ghi âm. Hãy mở bằng Chrome hoặc Safari bản mới.');
             return;
           }
-          const { recorder, mimeType } = createAudioRecorder(stream);
+          const { recorder } = createAudioRecorder(stream);
           mediaRecorderRef.current = recorder;
           mediaRecorderRef.current.ondataavailable = (e) => {
             if (e.data.size > 0) audioChunksRef.current.push(e.data);
