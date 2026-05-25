@@ -21,7 +21,10 @@ export default function VoiceCoach() {
     if (saved && saved.trim() !== '') return saved;
     return import.meta.env.VITE_GEMINI_API_KEY || '';
   });
-  const [sttProvider, setSttProvider] = useState(() => localStorage.getItem('pres_coach_stt') || 'cloud');
+  const [sttProvider, setSttProvider] = useState(() => {
+    const saved = localStorage.getItem('pres_coach_stt');
+    return saved && saved !== 'browser' ? saved : 'cloud';
+  });
   const [activeView, setActiveView] = useState('practice'); // practice, report, settings
   const [showSlideDrawer, setShowSlideDrawer] = useState(false);
 
@@ -63,6 +66,7 @@ export default function VoiceCoach() {
   const timerRef = useRef(null);
   const audioUploadRef = useRef(null);
   const cardContainerRef = useRef(null);
+  const recordingStartedAtRef = useRef(0);
 
   // Track state in refs to prevent stale closure bugs in browser speech events
   const isRecordingRef = useRef(false);
@@ -201,8 +205,10 @@ export default function VoiceCoach() {
 
   // Save general engine settings
   const handleSaveSettings = () => {
+    const nextSttProvider = sttProvider === 'browser' ? 'cloud' : sttProvider;
+    setSttProvider(nextSttProvider);
     localStorage.setItem('pres_coach_gemini_key', geminiKey);
-    localStorage.setItem('pres_coach_stt', sttProvider);
+    localStorage.setItem('pres_coach_stt', nextSttProvider);
     setStatusMsg('Cấu hình thuyết trình đã lưu thành công.');
     setActiveView('practice');
   };
@@ -237,22 +243,29 @@ export default function VoiceCoach() {
       }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mimeType = getSupportedAudioMimeType();
-        mediaRecorderRef.current = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+        const { recorder, mimeType } = createAudioRecorder(stream);
+        mediaRecorderRef.current = recorder;
+        recordingStartedAtRef.current = new Date().getTime();
         mediaRecorderRef.current.ondataavailable = (e) => {
           if (e.data.size > 0) audioChunksRef.current.push(e.data);
         };
         mediaRecorderRef.current.onstop = async () => {
+          if (!audioChunksRef.current.length) {
+            stopRecorderTracks();
+            setStatusMsg('Không thu được dữ liệu âm thanh. Hãy thử lại và kiểm tra quyền Micro.');
+            return;
+          }
           if (sttProvider === 'cloud') {
             setStatusMsg('Đang tải lên dữ liệu ghi âm và nhận dạng tiếng Việt (Whisper)...');
             try {
               const recordedType = mediaRecorderRef.current?.mimeType || audioChunksRef.current[0]?.type || mimeType || 'audio/webm';
               const audioBlob = new Blob(audioChunksRef.current, { type: recordedType });
               const extension = getAudioExtension(recordedType);
+              const duration = ((new Date().getTime() - recordingStartedAtRef.current) / 1000).toFixed(1);
               const formData = new FormData();
               formData.append('file', audioBlob, `speech.${extension}`);
               formData.append('language', 'vi');
-              formData.append('client_duration', recordingTime.toString());
+              formData.append('client_duration', duration);
               
               const response = await fetch('/v1/audio/transcriptions', {
                 method: 'POST',
@@ -290,7 +303,7 @@ export default function VoiceCoach() {
           }
           stopRecorderTracks();
         };
-        mediaRecorderRef.current.start();
+        mediaRecorderRef.current.start(1000);
         setIsRecording(true);
         setRecordingTime(0);
         if (sttProvider === 'cloud') {
@@ -319,6 +332,7 @@ export default function VoiceCoach() {
     }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try {
+        mediaRecorderRef.current.requestData?.();
         mediaRecorderRef.current.stop();
       } catch {
         // Ignore stop errors when recorder tracks were already released.
@@ -531,6 +545,18 @@ export default function VoiceCoach() {
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
     }
+  };
+
+  const createAudioRecorder = (stream) => {
+    const mimeType = getSupportedAudioMimeType();
+    if (mimeType) {
+      try {
+        return { recorder: new MediaRecorder(stream, { mimeType }), mimeType };
+      } catch (err) {
+        console.warn('Preferred MediaRecorder MIME failed, falling back:', err);
+      }
+    }
+    return { recorder: new MediaRecorder(stream), mimeType: '' };
   };
 
   return (
@@ -953,7 +979,6 @@ export default function VoiceCoach() {
                       className="w-full bg-[#0A0A14] border border-white/5 rounded-xl p-3 text-xs focus:outline-none focus:border-[#7B61FF] text-white"
                     >
                       <option value="cloud">Cloud Whisper API (Đám mây siêu chính xác)</option>
-                      <option value="browser">Browser Web Speech API (Ghi âm trực tiếp)</option>
                       <option value="manual">Nhập văn bản thủ công (Sandbox Textbox)</option>
                     </select>
                   </div>
