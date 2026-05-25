@@ -436,6 +436,8 @@ export default function VoiceCoach() {
       return;
     }
 
+    setActiveTab('delivery');
+    setActiveView('report');
     analyzeWithGemini(combinedTranscript);
   };
 
