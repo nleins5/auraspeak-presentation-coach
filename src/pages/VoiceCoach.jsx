@@ -229,9 +229,14 @@ export default function VoiceCoach() {
         setStatusMsg('Trình duyệt không hỗ trợ micro.');
         return;
       }
+      if (typeof MediaRecorder === 'undefined') {
+        setStatusMsg('Trình duyệt không hỗ trợ ghi âm. Hãy mở bằng Chrome hoặc Safari bản mới.');
+        return;
+      }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorderRef.current = new MediaRecorder(stream);
+        const mimeType = getSupportedAudioMimeType();
+        mediaRecorderRef.current = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
         mediaRecorderRef.current.ondataavailable = (e) => {
           if (e.data.size > 0) audioChunksRef.current.push(e.data);
         };
@@ -239,9 +244,11 @@ export default function VoiceCoach() {
           if (sttProvider === 'cloud') {
             setStatusMsg('Đang tải lên dữ liệu ghi âm và nhận dạng tiếng Việt (Whisper)...');
             try {
-              const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+              const recordedType = mediaRecorderRef.current?.mimeType || audioChunksRef.current[0]?.type || mimeType || 'audio/webm';
+              const audioBlob = new Blob(audioChunksRef.current, { type: recordedType });
+              const extension = getAudioExtension(recordedType);
               const formData = new FormData();
-              formData.append('file', audioBlob, 'speech.webm');
+              formData.append('file', audioBlob, `speech.${extension}`);
               formData.append('language', 'vi');
               formData.append('client_duration', recordingTime.toString());
               
@@ -257,6 +264,7 @@ export default function VoiceCoach() {
               const data = await response.json();
               if (data.error) {
                 setStatusMsg(`Nhận dạng thất bại: ${data.error}`);
+                stopRecorderTracks();
                 return;
               }
               
@@ -278,6 +286,7 @@ export default function VoiceCoach() {
           } else {
             setStatusMsg('Đã lưu dữ liệu thuyết trình Sandbox. Hãy nhập văn bản phía dưới.');
           }
+          stopRecorderTracks();
         };
         mediaRecorderRef.current.start();
         setIsRecording(true);
@@ -309,7 +318,6 @@ export default function VoiceCoach() {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try {
         mediaRecorderRef.current.stop();
-        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
       } catch {
         // Ignore stop errors when recorder tracks were already released.
       }
@@ -442,6 +450,32 @@ export default function VoiceCoach() {
     const m = Math.floor(secs / 60).toString().padStart(2, '0');
     const s = (secs % 60).toString().padStart(2, '0');
     return `${m}:${s}`;
+  };
+
+  const getSupportedAudioMimeType = () => {
+    if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
+    return [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4;codecs=mp4a.40.2',
+      'audio/mp4',
+      'audio/aac',
+      'audio/ogg;codecs=opus',
+    ].find(type => MediaRecorder.isTypeSupported(type)) || '';
+  };
+
+  const getAudioExtension = (mimeType = '') => {
+    if (mimeType.includes('mp4') || mimeType.includes('aac')) return 'm4a';
+    if (mimeType.includes('ogg')) return 'ogg';
+    if (mimeType.includes('wav')) return 'wav';
+    return 'webm';
+  };
+
+  const stopRecorderTracks = () => {
+    const stream = mediaRecorderRef.current?.stream;
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+    }
   };
 
   return (
